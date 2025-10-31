@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Final Bill Split - {{ group.name }}</h2>
+
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th>Member</th>
+            <th>Net Balance</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for member, balance in balances.items() %}
+        <tr>
+            <td>{{ member }}</td>
+            <td>
+                {% if balance > 0.01 %}
+                    <span class="text-success">Gets ${{ '%.2f'|format(balance) }}</span>
+                {% elif balance < -0.01 %}
+                    <span class="text-danger">Owes ${{ '%.2f'|format(-balance) }}</span>
+                {% else %}
+                    <span class="text-muted">Settled ✓</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% if all_settled %}
+    <div class="alert alert-success">
+        <strong>All dues are settled!</strong> You can now delete this group if needed.
+    </div>
+{% else %}
+    <div class="alert alert-warning">
+        <strong>Outstanding balances remain.</strong> Settle all dues before deleting the group.
+    </div>
+{% endif %}
+
+<a href="{{ url_for('expenses', group_id=group.id) }}" class="btn btn-primary">Add More Expenses</a>
+<a href="{{ url_for('index') }}" class="btn btn-secondary">Back to Groups</a>
+{% endblock %}

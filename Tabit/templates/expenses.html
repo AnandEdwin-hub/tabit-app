@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Add an Expense - {{ group.name }}</h2>
+<form method="POST" enctype="multipart/form-data">
+    <div class="mb-2">
+        <label for="payer">Who paid?</label><br>
+        {% for m in group.members %}
+            <input type="checkbox" name="payer" value="{{ m }}"> {{ m }}<br>
+        {% endfor %}
+        <small class="text-muted">Select one or many if multiple paid together.</small>
+    </div>
+    <div class="mb-2">
+        <label>Description</label>
+        <input type="text" name="description" placeholder="E.g. Food, Booze..." required class="form-control">
+    </div>
+    <div class="mb-2">
+        <label>Upload bill (optional)</label>
+        <input type="file" name="bill_upload" accept="image/*,application/pdf" class="form-control">
+    </div>
+    <div class="mb-2">
+        <label>Amount paid</label>
+        <input type="number" step="any" name="amount" required class="form-control">
+    </div>
+    <div class="mb-2">
+        <label>Who should this be split with?</label><br>
+        {% for m in group.members %}
+            <input type="checkbox" name="shared_with" value="{{ m }}"> {{ m }}<br>
+        {% endfor %}
+        <small class="text-muted">Tick one or many</small>
+    </div>
+    <button class="btn btn-primary mt-2" type="submit">Add Expense</button>
+</form>
+<hr>
+<h4>Current Expenses</h4>
+<ul>
+    {% for e in group.expenses %}
+    <li>
+        <strong>{{ e.payer | join(', ') }}</strong> paid <strong>${{ e.amount }}</strong>
+        for <em>{{ e.desc }}</em>
+        (split with {{ e.shared_with | join(', ') }})
+    </li>
+    {% endfor %}
+</ul>
+<a href="{{ url_for('transactions', group_id=group.id) }}" class="btn btn-success mt-3">See Split</a>
+<a href="{{ url_for('index') }}" class="btn btn-secondary mt-3">Back to Groups</a>
+{% endblock %}

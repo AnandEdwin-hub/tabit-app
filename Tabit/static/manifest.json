@@ -1,0 +1,21 @@
+{
+  "name": "Tabit - Bill Splitter",
+  "short_name": "Tabit",
+  "description": "Split bills easily with friends",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#21808d",
+  "icons": [
+    {
+      "src": "/static/tabit-icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/tabit-icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

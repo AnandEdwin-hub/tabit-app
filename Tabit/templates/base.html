@@ -1,0 +1,56 @@
+
+{% block content %}
+<div class="text-center mb-4">
+    <img src="{{ url_for('static', filename='tabit-icon.png') }}" alt="Tabit Icon" width="64" height="64">
+    <h1 class="display-5 mt-2">Tabit</h1>
+</div>
+<div class="card mx-auto" style="max-width:400px;">
+    <div class="card-body">
+        <h3 class="card-title mb-3">Create a Group</h3>
+        <form method="POST" enctype="multipart/form-data">
+            <input type="text" name="group_name" placeholder="Group name" required class="form-control mb-3">
+            <div class="mb-3">
+                <label>Group Photo (optional):</label>
+                <input type="file" name="group_photo" accept="image/*" class="form-control">
+            </div>
+            <div id="members" class="mb-3">
+                <label>Add members:</label>
+                <input type="text" id="memberInput" class="form-control" placeholder="Member Name">
+                <button type="button" class="btn btn-secondary mt-2" onclick="addMember()">Add</button>
+                <ul id="membersList" class="mt-2"></ul>
+                <input type="hidden" name="members" id="membersHidden">
+            </div>
+            <button class="btn btn-primary w-100 mt-2" type="submit">Create Group</button>
+        </form>
+    </div>
+</div>
+<script>
+    let members = [];
+    function addMember() {
+        let name = document.getElementById('memberInput').value.trim();
+        if(name) {
+            members.push(name);
+            document.getElementById('membersList').innerHTML += '<li>' + name + '</li>';
+            document.getElementById('membersHidden').value = members.join(',');
+            document.getElementById('memberInput').value = '';
+        }
+    }
+</script>
+{% endblock %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Tabit</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <meta name="theme-color" content="#21808d">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='tabit-icon.png') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-4">
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>
