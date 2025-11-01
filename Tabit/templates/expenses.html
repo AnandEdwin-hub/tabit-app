@@ -35,7 +35,7 @@
 <ul>
     {% for e in group.expenses %}
     <li>
-        <strong>{{ e.payer | join(', ') }}</strong> paid <strong>${{ e.amount }}</strong>
+        <strong>{{ e.payer | join(', ') }}</strong> paid <strong>₹{{ e.amount }}</strong>
         for <em>{{ e.desc }}</em>
         (split with {{ e.shared_with | join(', ') }})
     </li>
