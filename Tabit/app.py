@@ -1,66 +1,119 @@
 import os
-from flask import Flask, render_template, request, redirect, url_for, session
+from flask import Flask, render_template, request, redirect, url_for
 from werkzeug.utils import secure_filename
 from datetime import datetime
+import sqlite3
+import json
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key'
+app.secret_key = os.environ.get('SECRET_KEY', 'your_secret_key_change_in_production')
 
 UPLOAD_FOLDER = 'static/uploads/'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'pdf'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+DATABASE = 'tabit.db'
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def get_db():
+    """Get database connection"""
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    """Initialize database with tables"""
+    conn = get_db()
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            members TEXT NOT NULL,
+            photo TEXT,
+            created_at TEXT NOT NULL
+        )
+    ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id INTEGER NOT NULL,
+            payer TEXT NOT NULL,
+            description TEXT NOT NULL,
+            amount REAL NOT NULL,
+            shared_with TEXT NOT NULL,
+            bill TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (group_id) REFERENCES groups (id)
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+# Initialize database on startup
+init_db()
 
 # --- 1. Route for GROUP CREATION & DISPLAY ---
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    # Initialize session if needed
-    if 'all_groups' not in session:
-        session['all_groups'] = []
-    
     if request.method == 'POST':
         group_name = request.form['group_name']
         members = request.form['members'].split(',')
-        members = [m.strip() for m in members if m.strip()]  # Clean up
+        members = [m.strip() for m in members if m.strip()]
         file = request.files.get('group_photo')
         filename = None
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
             file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
         
-        # Create group with unique ID
-        group_id = len(session.get('all_groups', [])) + 1
-        new_group = {
-            'id': group_id,
-            'name': group_name,
-            'members': members,
-            'photo': filename,
-            'expenses': [],
-            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M')
-        }
-        
-        all_groups = session.get('all_groups', [])
-        all_groups.append(new_group)
-        session['all_groups'] = all_groups
-        session.modified = True
+        # Save to database
+        conn = get_db()
+        conn.execute(
+            'INSERT INTO groups (name, members, photo, created_at) VALUES (?, ?, ?, ?)',
+            (group_name, ','.join(members), filename, datetime.now().strftime('%Y-%m-%d %H:%M'))
+        )
+        conn.commit()
+        conn.close()
         
         return redirect(url_for('index'))
     
-    # Display all groups
-    all_groups = session.get('all_groups', [])
-    return render_template('index.html', groups=all_groups)
+    # Get all groups from database
+    conn = get_db()
+    groups_raw = conn.execute('SELECT * FROM groups ORDER BY created_at DESC').fetchall()
+    conn.close()
+    
+    # Convert to list of dicts
+    groups = []
+    for g in groups_raw:
+        groups.append({
+            'id': g['id'],
+            'name': g['name'],
+            'members': g['members'].split(','),
+            'photo': g['photo'],
+            'created_at': g['created_at']
+        })
+    
+    return render_template('index.html', groups=groups)
 
 # --- 2. Route for ADDING EXPENSES ---
 @app.route('/expenses/<int:group_id>', methods=['GET', 'POST'])
 def expenses(group_id):
-    all_groups = session.get('all_groups', [])
-    group = next((g for g in all_groups if g['id'] == group_id), None)
+    conn = get_db()
+    group_raw = conn.execute('SELECT * FROM groups WHERE id = ?', (group_id,)).fetchone()
     
-    if not group:
+    if not group_raw:
+        conn.close()
         return redirect(url_for('index'))
+    
+    # Convert group to dict
+    group = {
+        'id': group_raw['id'],
+        'name': group_raw['name'],
+        'members': group_raw['members'].split(','),
+        'photo': group_raw['photo']
+    }
     
     if request.method == 'POST':
         payers = request.form.getlist('payer')
@@ -73,45 +126,67 @@ def expenses(group_id):
             bill_filename = secure_filename(proof.filename)
             proof.save(os.path.join(app.config['UPLOAD_FOLDER'], bill_filename))
         
-        expense = {
-            'payer': payers,
-            'desc': description,
-            'amount': amount,
-            'shared_with': shared_with,
-            'bill': bill_filename
-        }
-        group['expenses'].append(expense)
-        
-        # Update session
-        for i, g in enumerate(all_groups):
-            if g['id'] == group_id:
-                all_groups[i] = group
-        session['all_groups'] = all_groups
-        session.modified = True
+        # Save expense to database
+        conn.execute(
+            'INSERT INTO expenses (group_id, payer, description, amount, shared_with, bill, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            (group_id, ','.join(payers), description, amount, ','.join(shared_with), bill_filename, datetime.now().strftime('%Y-%m-%d %H:%M'))
+        )
+        conn.commit()
+        conn.close()
         
         return redirect(url_for('expenses', group_id=group_id))
+    
+    # Get expenses for this group
+    expenses_raw = conn.execute('SELECT * FROM expenses WHERE group_id = ? ORDER BY created_at DESC', (group_id,)).fetchall()
+    conn.close()
+    
+    # Convert expenses to list of dicts
+    expenses_list = []
+    for e in expenses_raw:
+        expenses_list.append({
+            'payer': e['payer'].split(','),
+            'desc': e['description'],
+            'amount': e['amount'],
+            'shared_with': e['shared_with'].split(','),
+            'bill': e['bill']
+        })
+    
+    group['expenses'] = expenses_list
     
     return render_template('expenses.html', group=group)
 
 # --- 3. Route for SPLIT VIEW ---
 @app.route('/transactions/<int:group_id>')
 def transactions(group_id):
-    all_groups = session.get('all_groups', [])
-    group = next((g for g in all_groups if g['id'] == group_id), None)
+    conn = get_db()
+    group_raw = conn.execute('SELECT * FROM groups WHERE id = ?', (group_id,)).fetchone()
     
-    if not group:
+    if not group_raw:
+        conn.close()
         return redirect(url_for('index'))
     
-    members = group.get('members', [])
-    expenses = group.get('expenses', [])
+    # Convert group to dict
+    members = group_raw['members'].split(',')
+    group = {
+        'id': group_raw['id'],
+        'name': group_raw['name'],
+        'members': members
+    }
+    
+    # Get expenses
+    expenses_raw = conn.execute('SELECT * FROM expenses WHERE group_id = ?', (group_id,)).fetchall()
+    conn.close()
+    
+    # Calculate balances
     balances = {m: 0 for m in members}
     
-    for e in expenses:
+    for e in expenses_raw:
         total_amount = e['amount']
-        payers = e['payer']
+        payers = e['payer'].split(',')
         amount_per_payer = total_amount / len(payers) if payers else total_amount
-        shared_with = e['shared_with']
+        shared_with = e['shared_with'].split(',')
         amount_per_person = total_amount / len(shared_with) if shared_with else 0
+        
         for m in shared_with:
             balances[m] -= amount_per_person
         for p in payers:
@@ -126,25 +201,28 @@ def transactions(group_id):
 @app.route('/delete_group/<int:group_id>', methods=['POST'])
 def delete_group(group_id):
     deleter_name = request.form.get('deleter_name', '').strip()
-    SECRET_CODE = '1986'  # The bypass code
+    SECRET_CODE = '1986'
     
-    all_groups = session.get('all_groups', [])
-    group = next((g for g in all_groups if g['id'] == group_id), None)
+    conn = get_db()
+    group_raw = conn.execute('SELECT * FROM groups WHERE id = ?', (group_id,)).fetchone()
     
-    if not group:
+    if not group_raw:
+        conn.close()
         return redirect(url_for('index'))
     
-    # Check if all dues are settled
-    members = group.get('members', [])
-    expenses = group.get('expenses', [])
+    # Calculate balances to check if settled
+    members = group_raw['members'].split(',')
     balances = {m: 0 for m in members}
     
-    for e in expenses:
+    expenses_raw = conn.execute('SELECT * FROM expenses WHERE group_id = ?', (group_id,)).fetchall()
+    
+    for e in expenses_raw:
         total_amount = e['amount']
-        payers = e['payer']
+        payers = e['payer'].split(',')
         amount_per_payer = total_amount / len(payers) if payers else total_amount
-        shared_with = e['shared_with']
+        shared_with = e['shared_with'].split(',')
         amount_per_person = total_amount / len(shared_with) if shared_with else 0
+        
         for m in shared_with:
             balances[m] -= amount_per_person
         for p in payers:
@@ -152,8 +230,9 @@ def delete_group(group_id):
     
     all_settled = all(abs(balance) < 0.01 for balance in balances.values())
     
-    # Check if secret code is entered in the name field OR dues are settled
+    # Check if deletion is allowed
     if not all_settled and deleter_name != SECRET_CODE:
+        conn.close()
         return """
         <html>
         <head>
@@ -164,7 +243,7 @@ def delete_group(group_id):
             <div class="container mt-5">
                 <div class="alert alert-danger">
                     <h4>Cannot Delete Group</h4>
-                    <p>Settle all dues before deleting this group.</p>
+                    <p>Settle all dues before deleting this group, or use the secret code.</p>
                     <a href="/" class="btn btn-primary">Back to Groups</a>
                 </div>
             </div>
@@ -172,19 +251,12 @@ def delete_group(group_id):
         </html>
         """, 403
     
-    # Store deletion info
-    if deleter_name == SECRET_CODE:
-        group['deleted_by'] = 'Admin (Secret Code)'
-        group['deleted_with_code'] = True
-    else:
-        group['deleted_by'] = deleter_name
-    
-    group['deleted_at'] = datetime.now().strftime('%Y-%m-%d %H:%M')
-    
-    # Remove group
-    all_groups = [g for g in all_groups if g['id'] != group_id]
-    session['all_groups'] = all_groups
-    session.modified = True
+    # Delete expenses first (foreign key constraint)
+    conn.execute('DELETE FROM expenses WHERE group_id = ?', (group_id,))
+    # Delete group
+    conn.execute('DELETE FROM groups WHERE id = ?', (group_id,))
+    conn.commit()
+    conn.close()
     
     return redirect(url_for('index'))
 
@@ -192,4 +264,3 @@ if __name__ == '__main__':
     # For production (Render)
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
-
