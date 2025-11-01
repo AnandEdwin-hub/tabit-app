@@ -3,7 +3,8 @@ from flask import Flask, render_template, request, redirect, url_for
 from werkzeug.utils import secure_filename
 from datetime import datetime
 import sqlite3
-import json
+import atexit
+import shutil
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'your_secret_key_change_in_production')
@@ -13,7 +14,8 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'pdf'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-DATABASE = 'tabit.db'
+# Database will be in the same directory as app.py
+DATABASE = os.path.join(os.path.dirname(__file__), 'tabit.db')
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -62,6 +64,10 @@ def index():
         group_name = request.form['group_name']
         members = request.form['members'].split(',')
         members = [m.strip() for m in members if m.strip()]
+        
+        if not members:
+            return redirect(url_for('index'))
+        
         file = request.files.get('group_photo')
         filename = None
         if file and allowed_file(file.filename):
@@ -120,6 +126,11 @@ def expenses(group_id):
         description = request.form['description']
         amount = float(request.form['amount'])
         shared_with = request.form.getlist('shared_with')
+        
+        if not payers or not shared_with:
+            conn.close()
+            return redirect(url_for('expenses', group_id=group_id))
+        
         proof = request.files.get('bill_upload')
         bill_filename = None
         if proof and allowed_file(proof.filename):
@@ -243,7 +254,7 @@ def delete_group(group_id):
             <div class="container mt-5">
                 <div class="alert alert-danger">
                     <h4>Cannot Delete Group</h4>
-                    <p>Settle all dues before deleting this group, or use the secret code.</p>
+                    <p>Settle all dues before deleting this group, or enter the secret code (1986) in the name field.</p>
                     <a href="/" class="btn btn-primary">Back to Groups</a>
                 </div>
             </div>
